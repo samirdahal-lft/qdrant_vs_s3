@@ -1,5 +1,3 @@
-"""Shared setup — call once to initialize both platforms with movie data."""
-
 import time
 
 from dotenv import load_dotenv
@@ -16,7 +14,6 @@ from core.config import (
 from core.dataset import MOVIES
 from core.embeddings import generate_movie_embeddings
 
-# ── Qdrant setup ──────────────────────────────────────────────
 load_dotenv()
 
 
@@ -120,12 +117,9 @@ def setup_both():
     print("Setting up both platforms...")
     qc, emb = setup_qdrant()
     sc, _ = setup_s3vectors()
-    time.sleep(2)  # let S3 Vectors index settle (eventual consistency)
+    time.sleep(2)
     print("  Ready.\n")
     return qc, sc, emb
-
-
-# ── Cleanup ───────────────────────────────────────────────────
 
 
 def cleanup_qdrant():
@@ -158,4 +152,4 @@ def cleanup_both():
 
 
 if __name__ == "__main__":
-    setup_qdrant()
+    setup_both()
