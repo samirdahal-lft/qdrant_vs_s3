@@ -1,94 +1,153 @@
-"""Test 12: Hybrid Search (dense + sparse) — Qdrant only."""
-
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
 
 from qdrant_client import QdrantClient, models
+from fastembed import SparseTextEmbedding
 
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
 from core.dataset import MOVIES
 from core.embeddings import generate_movie_embeddings, generate_query_embedding
 
-COLLECTION = "movies_hybrid"  # Separate collection — don't touch shared 'movies'
+
+@dataclass(frozen=True)
+class HybridSearchResult:
+    title: str
+    score: float
+    platform: str
+    latency_ms: float
+    is_supported: bool = True
+
+
+class HybridSearchBenchmark(ABC):
+    def __init__(self, client):
+        self.client = client
+
+    @abstractmethod
+    def search_hybrid(self, query_text: str, limit: int) -> List[HybridSearchResult]:
+        pass
+
+    def get_latency(self, start_time: float) -> float:
+        return (time.perf_counter() - start_time) * 1000
+
+
+
+
+class QdrantHybridEngine(HybridSearchBenchmark):
+    COLLECTION = "movies_hybrid"
+
+    def __init__(self, client):
+        super().__init__(client)
+        self.sparse_model = SparseTextEmbedding(model_name="qdrant/bm25")
+        self._setup_collection()
+
+    def _setup_collection(self):
+        """Standardizes collection setup logic."""
+        if self.client.collection_exists(self.COLLECTION):
+            self.client.delete_collection(self.COLLECTION)
+
+        self.client.create_collection(
+            collection_name=self.COLLECTION,
+            vectors_config={
+                "dense": models.VectorParams(
+                    size=EMBEDDING_DIM, distance=models.Distance.COSINE
+                )
+            },
+            sparse_vectors_config={
+                "bm25": models.SparseVectorParams(modifier=models.Modifier.IDF)
+            },
+        )
+        self._ingest_data()
+
+    def _ingest_data(self):
+        dense_embeddings = generate_movie_embeddings(MOVIES)
+        points = []
+        for m in MOVIES:
+            text = f"{m['title']} {m['description']} {m['genre']}"
+            sparse_vec = list(self.sparse_model.embed([text]))[0]
+
+            points.append(
+                models.PointStruct(
+                    id=qdrant_id(m["id"]),
+                    vector={
+                        "dense": dense_embeddings[m["id"]],
+                        "bm25": models.SparseVector(
+                            indices=sparse_vec.indices.tolist(),
+                            values=sparse_vec.values.tolist(),
+                        ),
+                    },
+                    payload={"title": m["title"], "genre": m["genre"]},
+                )
+            )
+        self.client.upsert(collection_name=self.COLLECTION, points=points)
+
+    def search_hybrid(self, query_text: str, limit: int) -> List[HybridSearchResult]:
+        dense_vec = generate_query_embedding(query_text)
+        sparse_query_vec = list(self.sparse_model.embed([query_text]))[0]
+
+        start = time.perf_counter()
+        results = self.client.query_points(
+            collection_name=self.COLLECTION,
+            prefetch=[
+                models.Prefetch(query=dense_vec, using="dense", limit=10),
+                models.Prefetch(
+                    query=models.SparseVector(
+                        indices=sparse_query_vec.indices.tolist(),
+                        values=sparse_query_vec.values.tolist(),
+                    ),
+                    using="bm25",
+                    limit=10,
+                ),
+            ],
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            limit=limit,
+            with_payload=True,
+        )
+
+        latency = self.get_latency(start)
+        return [
+            HybridSearchResult(p.payload["title"], p.score, "Qdrant", latency)
+            for p in results.points
+        ]
+
+
+class S3HybridEngine(HybridSearchBenchmark):
+    """Null Object Pattern: Explicitly handles lack of support for Hybrid Search."""
+
+    def search_hybrid(self, query_text: str, limit: int) -> List[HybridSearchResult]:
+        return [HybridSearchResult("N/A", 0.0, "S3 Vectors", 0.0, is_supported=False)]
+
+
+def report(query_text: str, result_groups: List[List[HybridSearchResult]]):
+    print("=" * 60)
+    print(f"TEST 12: Hybrid Search — Query: '{query_text}'")
+    print("=" * 60)
+
+    for results in result_groups:
+        if not results:
+            continue
+        platform = results[0].platform
+
+        if not results[0].is_supported:
+            print(f"\n{platform}: Not supported")
+            print("  Required features: Sparse Vectors, Fusion (RRF)")
+            continue
+
+        print(f"\n{platform} (RRF Fusion - {results[0].latency_ms:.0f}ms):")
+        for i, res in enumerate(results, 1):
+            print(f"  {i}. {res.title} (score={res.score:.4f})")
 
 
 def run():
-    print("=" * 60)
-    print("TEST 12: Hybrid Search (dense + sparse vectors) — Qdrant only")
-    print("=" * 60)
-
     qc = QdrantClient(url=QDRANT_URL)
-    embeddings = generate_movie_embeddings(MOVIES)
+    query = "space robots adventure"
 
-    # Create a dedicated collection with BOTH dense and sparse vectors
-    qc.recreate_collection(
-        COLLECTION,
-        vectors_config={
-            "dense": models.VectorParams(
-                size=EMBEDDING_DIM, distance=models.Distance.COSINE
-            )
-        },
-        sparse_vectors_config={"sparse": models.SparseVectorParams()},
-    )
+    engines = [QdrantHybridEngine(qc), S3HybridEngine(None)]
+    benchmark_results = [engine.search_hybrid(query, limit=5) for engine in engines]
 
-    # Build simple sparse vectors from keywords (bag-of-words style)
-    def make_sparse(text: str) -> tuple[list[int], list[float]]:
-        words = set(text.lower().split())
-        indices = [hash(w) % 10000 for w in words]
-        values = [1.0] * len(indices)
-        return indices, values
-
-    # Insert with both vector types
-    points = []
-    for m in MOVIES:
-        text = f"{m['title']} {m['description']} {m['genre']}"
-        indices, values = make_sparse(text)
-        points.append(
-            models.PointStruct(
-                id=qdrant_id(m["id"]),
-                vector={
-                    "dense": embeddings[m["id"]],
-                    "sparse": models.SparseVector(indices=indices, values=values),
-                },
-                payload={"title": m["title"], "genre": m["genre"], "year": m["year"]},
-            )
-        )
-    qc.upsert(COLLECTION, points)
-
-    # Hybrid query: combine dense (semantic) + sparse (keyword)
-    query_text = "space robots adventure"
-    dense_vec = generate_query_embedding(query_text)
-    sparse_idx, sparse_val = make_sparse(query_text)
-
-    t0 = time.perf_counter()
-    results = qc.query_points(
-        COLLECTION,
-        prefetch=[
-            models.Prefetch(query=dense_vec, using="dense", limit=10),
-            models.Prefetch(
-                query=models.SparseVector(indices=sparse_idx, values=sparse_val),
-                using="sparse",
-                limit=10,
-            ),
-        ],
-        query=models.FusionQuery(fusion=models.Fusion.RRF),  # Reciprocal Rank Fusion
-        limit=5,
-        with_payload=True,
-    )
-    ms = (time.perf_counter() - t0) * 1000
-
-    print(f'\nQuery: "{query_text}"')
-    print(f"Qdrant Hybrid Search — RRF Fusion ({ms:.0f}ms):")
-    for i, p in enumerate(results.points):
-        print(
-            f"  {i + 1}. {p.payload['title']} (genre={p.payload['genre']}, score={p.score:.4f})"
-        )
-
-    print(f"\nS3 Vectors: ❌ Not supported")
-    print(f"  S3 Vectors only supports dense (float32) vectors.")
-    print(f"  No sparse vectors, no hybrid search, no fusion.")
-
-    # Cleanup dedicated collection
-    qc.delete_collection(COLLECTION)
+    report(query, benchmark_results)
+    qc.delete_collection(QdrantHybridEngine.COLLECTION)
 
 
 if __name__ == "__main__":
