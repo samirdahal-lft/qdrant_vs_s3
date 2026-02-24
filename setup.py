@@ -1,6 +1,9 @@
 import time
 
 from dotenv import load_dotenv
+from core.clients import get_qdrant, get_s3v
+from qdrant_client import models
+
 
 from core.config import (
     AWS_REGION,
@@ -18,9 +21,8 @@ load_dotenv()
 
 
 def setup_qdrant():
-    from qdrant_client import QdrantClient, models
 
-    client = QdrantClient(url=QDRANT_URL, timeout=120)
+    client = get_qdrant()
     if client.collection_exists(collection_name=QDRANT_COLLECTION):
         client.delete_collection(collection_name=QDRANT_COLLECTION)
 
@@ -65,9 +67,8 @@ def setup_qdrant():
 
 
 def setup_s3vectors():
-    import boto3
 
-    client = boto3.client("s3vectors", region_name=AWS_REGION)
+    client = get_s3v()
 
     try:
         client.create_vector_bucket(vectorBucketName=S3V_BUCKET_NAME)
