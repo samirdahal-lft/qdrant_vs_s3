@@ -1,30 +1,44 @@
-"""Test 05: Filter — OR Logic (genre=Drama OR genre=Comedy) — Both."""
-
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Dict, Any
 
 from qdrant_client import models
-
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
 
 
-def run():
-    qc, sc = get_clients()
-    qvec = generate_query_embedding("entertaining feel-good movies")
+@dataclass(frozen=True)
+class SearchResult:
+    title: str
+    score: float
+    platform: str
+    latency_ms: float
+    metadata: Dict[str, Any]
 
-    print("=" * 60)
-    print("TEST 05: Filter — OR Logic (Drama OR Comedy)")
-    print("=" * 60)
 
-    # Qdrant: should = OR
-    t0 = time.perf_counter()
-    q_res = qc.query_points(
-        QDRANT_COLLECTION,
-        query=qvec,
-        limit=5,
-        with_payload=True,
-        query_filter=models.Filter(
+class VectorBenchmark(ABC):
+    """Encapsulates common behavior for all vector database tests."""
+
+    def __init__(self, client):
+        self.client = client
+
+    @abstractmethod
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        """Subclasses implement specific filter logic here."""
+        pass
+
+    def get_latency(self, start_time: float) -> float:
+        return (time.perf_counter() - start_time) * 1000
+
+
+class QdrantEngine(VectorBenchmark):
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        start = time.perf_counter()
+
+        # Test-specific Filter Logic
+        query_filter = models.Filter(
             should=[
                 models.FieldCondition(
                     key="genre", match=models.MatchValue(value="Drama")
@@ -33,33 +47,85 @@ def run():
                     key="genre", match=models.MatchValue(value="Comedy")
                 ),
             ]
-        ),
-    )
-    q_ms = (time.perf_counter() - t0) * 1000
-
-    # S3 Vectors: $or
-    t0 = time.perf_counter()
-    s_res = sc.query_vectors(
-        vectorBucketName=S3V_BUCKET_NAME,
-        indexName=S3V_INDEX_NAME,
-        queryVector={"float32": qvec},
-        topK=5,
-        filter={"$or": [{"genre": "Drama"}, {"genre": "Comedy"}]},
-        returnDistance=True,
-        returnMetadata=True,
-    )
-    s_ms = (time.perf_counter() - t0) * 1000
-
-    print(f"\nQdrant ({q_ms:.0f}ms):")
-    for p in q_res.points:
-        print(
-            f"  {p.payload['title']} — genre={p.payload['genre']}, score={p.score:.4f}"
         )
 
-    print(f"\nS3 Vectors ({s_ms:.0f}ms):")
-    for v in s_res["vectors"]:
-        m = v["metadata"]
-        print(f"  {m['title']} — genre={m['genre']}, score={v['distance']:.4f}")
+        response = self.client.query_points(
+            collection_name=QDRANT_COLLECTION,
+            query=vector,
+            limit=limit,
+            query_filter=query_filter,
+            with_payload=True,
+        )
+
+        return [
+            SearchResult(
+                title=p.payload["title"],
+                score=p.score,
+                platform="Qdrant",
+                latency_ms=self.get_latency(start),
+                metadata=p.payload,
+            )
+            for p in response.points
+        ]
+
+
+class S3VectorEngine(VectorBenchmark):
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        start = time.perf_counter()
+
+        # Test-specific Filter Logic
+        query_filter = {"$or": [{"genre": "Drama"}, {"genre": "Comedy"}]}
+
+        response = self.client.query_vectors(
+            vectorBucketName=S3V_BUCKET_NAME,
+            indexName=S3V_INDEX_NAME,
+            queryVector={"float32": vector},
+            topK=limit,
+            filter=query_filter,
+            returnDistance=True,
+            returnMetadata=True,
+        )
+
+        return [
+            SearchResult(
+                title=v["metadata"]["title"],
+                score=v["distance"],
+                platform="S3 Vectors",
+                latency_ms=self.get_latency(start),
+                metadata=v["metadata"],
+            )
+            for v in response.get("vectors", [])
+        ]
+
+
+def report(test_name: str, result_groups: List[List[SearchResult]]):
+    print("=" * 60)
+    print(f"RUNNING: {test_name}")
+    print("=" * 60)
+
+    for results in result_groups:
+        if not results:
+            continue
+
+        engine_meta = results[0]
+        print(f"\n{engine_meta.platform} ({engine_meta.latency_ms:.0f}ms):")
+
+        for r in results:
+            # Dynamically list metadata keys (excluding title) to keep output clean
+            meta_str = ", ".join(
+                [f"{k}={v}" for k, v in r.metadata.items() if k != "title"]
+            )
+            print(f"  {r.title} — {meta_str}, score={r.score:.4f}")
+
+
+def run():
+    qc, sc = get_clients()
+    query_vector = generate_query_embedding("entertaining feel-good movies")
+
+    engines = [QdrantEngine(qc), S3VectorEngine(sc)]
+    benchmark_data = [engine.search(query_vector, limit=5) for engine in engines]
+
+    report("TEST 05: OR Logic (Drama OR Comedy)", benchmark_data)
 
 
 if __name__ == "__main__":
