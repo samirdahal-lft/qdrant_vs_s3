@@ -1,7 +1,7 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List
 
 from qdrant_client import QdrantClient, models
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
