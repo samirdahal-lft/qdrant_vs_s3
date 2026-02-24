@@ -1,73 +1,123 @@
-"""Test 13: Recommendation (like A, not like B) — Qdrant only."""
-
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
 
 from qdrant_client import models
-
 from core.clients import get_qdrant
 from core.config import QDRANT_COLLECTION, qdrant_id
+
+
+@dataclass(frozen=True)
+class RecommendResult:
+    title: str
+    genre: str
+    year: int
+    score: float
+    platform: str
+    latency_ms: float
+    is_supported: bool = True
+
+
+class RecommendationBenchmark(ABC):
+    def __init__(self, client):
+        self.client = client
+
+    @abstractmethod
+    def get_recommendations(
+        self, positive_ids: List[str], negative_ids: List[str], limit: int
+    ) -> List[RecommendResult]:
+        """Subclasses implement platform-specific recommendation logic."""
+        pass
+
+    def get_latency(self, start_time: float) -> float:
+        return (time.perf_counter() - start_time) * 1000
+
+
+
+
+class QdrantRecommendEngine(RecommendationBenchmark):
+    def get_recommendations(
+        self, positive_ids: List[str], negative_ids: List[str], limit: int
+    ) -> List[RecommendResult]:
+        start = time.perf_counter()
+
+        pos = [qdrant_id(pid) for pid in positive_ids]
+        neg = [qdrant_id(nid) for nid in negative_ids]
+
+        response = self.client.query_points(
+            collection_name=QDRANT_COLLECTION,
+            query=models.RecommendQuery(
+                recommend=models.RecommendInput(
+                    positive=pos,
+                    negative=neg,
+                    strategy=models.RecommendStrategy.AVERAGE_VECTOR,
+                )
+            ),
+            limit=limit,
+            with_payload=True,
+        )
+
+        latency = self.get_latency(start)
+        return [
+            RecommendResult(
+                title=p.payload["title"],
+                genre=p.payload["genre"],
+                year=p.payload["year"],
+                score=p.score,
+                platform="Qdrant",
+                latency_ms=latency,
+            )
+            for p in response.points
+        ]
+
+
+class S3RecommendEngine(RecommendationBenchmark):
+    """Signals lack of support for Recommendation API."""
+
+    def get_recommendations(self, *args, **kwargs) -> List[RecommendResult]:
+        return [RecommendResult("", "", 0, 0.0, "S3 Vectors", 0.0, is_supported=False)]
+
+
+def report_recommendations(title: str, results_list: List[List[RecommendResult]]):
+    print(f"\n--- {title} ---")
+
+    for results in results_list:
+        if not results:
+            continue
+        engine = results[0]
+
+        if not engine.is_supported:
+            print(f"{engine.platform}: Not supported (No native Recommendation API)")
+            continue
+
+        print(f"{engine.platform} ({engine.latency_ms:.0f}ms):")
+        for i, res in enumerate(results, 1):
+            print(f"  {i}. {res.title} ({res.genre}, {res.year}) score={res.score:.4f}")
 
 
 def run():
     qc = get_qdrant()
 
+    engines: List[RecommendationBenchmark] = [
+        QdrantRecommendEngine(qc),
+        S3RecommendEngine(None),
+    ]
+
     print("=" * 60)
-    print("TEST 13: Recommendation API — Qdrant only")
+    print("TEST 13: Recommendation API (Positive/Negative Examples)")
     print("=" * 60)
 
-    # Test 1: Movies like Inception
-    print('\n--- "Movies similar to Inception" ---')
-    t0 = time.perf_counter()
-    results = qc.query_points(
-        collection_name=QDRANT_COLLECTION,
-        query=models.RecommendQuery(
-            recommend=models.RecommendInput(
-                positive=[qdrant_id("mov_01")],  # Inception
-                negative=[],
-                strategy=models.RecommendStrategy.AVERAGE_VECTOR,
-            )
-        ),
-        limit=5,
-        with_payload=True,
+    results_1 = [e.get_recommendations(["mov_01"], [], 5) for e in engines]
+    report_recommendations("Movies similar to Inception", results_1)
+
+    # Scenario 2: Positive and Negative constraints
+    results_2 = [
+        e.get_recommendations(["mov_02", "mov_03"], ["mov_08"], 5) for e in engines
+    ]
+    report_recommendations(
+        "Like Interstellar + Matrix, NOT like Forrest Gump", results_2
     )
-    ms = (time.perf_counter() - t0) * 1000
-
-    print(f"Qdrant ({ms:.0f}ms):")
-    for i, r in enumerate(results.points):
-        print(
-            f"  {i + 1}. {r.payload['title']} ({r.payload['genre']}, {r.payload['year']}) score={r.score:.4f}"
-        )
-
-    # Test 2: Like Interstellar + Matrix, NOT like Forrest Gump
-    print('\n--- "Like Interstellar + Matrix, NOT like Forrest Gump" ---')
-    t0 = time.perf_counter()
-    results = qc.query_points(
-        collection_name=QDRANT_COLLECTION,
-        query=models.RecommendQuery(
-            recommend=models.RecommendInput(
-                positive=[
-                    qdrant_id("mov_02"),
-                    qdrant_id("mov_03"),
-                ],  # Interstellar, The Matrix
-                negative=[qdrant_id("mov_08")],  # Not like Forrest Gump
-                strategy=models.RecommendStrategy.AVERAGE_VECTOR,
-            )
-        ),
-        using='dense',
-        limit=5,
-        with_payload=True,
-    )
-    ms = (time.perf_counter() - t0) * 1000
-
-    print(f"Qdrant ({ms:.0f}ms):")
-    for i, r in enumerate(results.points):
-        print(
-            f"  {i + 1}. {r.payload['title']} ({r.payload['genre']}, {r.payload['year']}) score={r.score:.4f}"
-        )
-
-    print(f"\nS3 Vectors: ❌ Not supported")
-    print(f"  No recommendation API. You'd need to fetch the embedding,")
-    print(f"  compute an average, and query manually — no negative examples possible.")
 
 
 if __name__ == "__main__":
