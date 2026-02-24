@@ -11,4 +11,5 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "rich>=13.0.0",
     "numpy>=1.26.0",
+    "fastembed>=0.7.4",
 ]
