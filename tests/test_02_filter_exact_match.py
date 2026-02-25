@@ -1,93 +1,135 @@
 import time
-from typing import List
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any, Dict, List
 
 from qdrant_client import models
+
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
 
-@dataclass
+
+@dataclass(frozen=True)
 class SearchResult:
     title: str
-    genre: str
     score: float
     platform: str
     latency_ms: float
+    metadata: Dict[str, Any]
 
-class MovieSearchTester:
-    """Encapsulates search logic for benchmarking different vector platforms."""
-    
-    def __init__(self):
-        self.qdrant, self.s3_vectors = get_clients()
 
-    def run_sci_fi_benchmark(self, query_text: str = "popular movies") -> List[SearchResult]:
-        query_vector = generate_query_embedding(query_text)
-        
-        results = []
-        results.extend(self._search_qdrant(query_vector))
-        results.extend(self._search_s3_vectors(query_vector))
-        return results
+class VectorBenchmark(ABC):
+    """Encapsulates common behavior for all vector database tests."""
 
-    def _search_qdrant(self, vector: List[float]) -> List[SearchResult]:
-        start_time = time.perf_counter()
-        
-        response = self.qdrant.query_points(
+    def __init__(self, client):
+        self.client = client
+
+    @abstractmethod
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        """Subclasses implement specific filter logic here."""
+        pass
+
+    def get_latency(self, start_time: float) -> float:
+        return (time.perf_counter() - start_time) * 1000
+
+
+class QdrantEngine(VectorBenchmark):
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        start = time.perf_counter()
+
+        # Exact match filter
+        query_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="genre",
+                    match=models.MatchValue(value="Sci-Fi"),
+                )
+            ]
+        )
+
+        response = self.client.query_points(
             collection_name=QDRANT_COLLECTION,
             query=vector,
-            limit=5,
-            query_filter=models.Filter(
-                must=[models.FieldCondition(key="genre", match=models.MatchValue(value="Sci-Fi"))]
-            ),
+            limit=limit,
+            query_filter=query_filter,
             with_payload=True,
         )
-        
-        latency = self._calculate_latency(start_time)
+
         return [
-            SearchResult(p.payload['title'], p.payload['genre'], p.score, "Qdrant", latency)
+            SearchResult(
+                title=p.payload["title"],
+                score=p.score,
+                platform="Qdrant",
+                latency_ms=self.get_latency(start),
+                metadata=p.payload,
+            )
             for p in response.points
         ]
 
-    def _search_s3_vectors(self, vector: List[float]) -> List[SearchResult]:
-        start_time = time.perf_counter()
-        
-        response = self.s3_vectors.query_vectors(
+
+class S3VectorEngine(VectorBenchmark):
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        start = time.perf_counter()
+
+        # Exact match filter
+        query_filter = {"genre": "Sci-Fi"}
+
+        response = self.client.query_vectors(
             vectorBucketName=S3V_BUCKET_NAME,
             indexName=S3V_INDEX_NAME,
             queryVector={"float32": vector},
-            topK=5,
-            filter={"genre": "Sci-Fi"},
+            topK=limit,
+            filter=query_filter,
             returnDistance=True,
             returnMetadata=True,
         )
-        
-        latency = self._calculate_latency(start_time)
+
         return [
-            SearchResult(v["metadata"]['title'], v["metadata"]['genre'], v["distance"], "S3 Vectors", latency)
+            SearchResult(
+                title=v["metadata"]["title"],
+                score=v["distance"],
+                platform="S3 Vectors",
+                latency_ms=self.get_latency(start),
+                metadata=v["metadata"],
+            )
             for v in response.get("vectors", [])
         ]
 
-    @staticmethod
-    def _calculate_latency(start_time: float) -> float:
-        return (time.perf_counter() - start_time) * 1000
 
-def display_results(results: List[SearchResult]):
-    """Separates UI/Logging logic from business logic."""
+def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
+    """Prints a formatted benchmark report separating results per engine."""
     print("=" * 60)
-    print('TEST 02: Filter — Exact Match (genre = "Sci-Fi")')
+    print(f"RUNNING: {test_name}")
     print("=" * 60)
-    
-    current_platform = ""
-    for res in results:
-        if res.platform != current_platform:
-            print(f"\n{res.platform} ({res.latency_ms:.0f}ms):")
-            current_platform = res.platform
-        
-        print(f"  {res.title} — genre={res.genre}, score={res.score:.4f}")
 
-def main():
-    tester = MovieSearchTester()
-    results = tester.run_sci_fi_benchmark()
+    for results in result_groups:
+        if not results:
+            continue
+
+        engine_meta = results[0]
+        print(f"\n{engine_meta.platform} ({engine_meta.latency_ms:.0f}ms):")
+
+        for r in results:
+            meta_str = ", ".join(
+                [f"{k}={v}" for k, v in r.metadata.items() if k != "title"]
+            )
+            print(f"  {r.title} — {meta_str}, score={r.score:.4f}")
+
+
+def run() -> None:
+    """Entry point: runs filter exact-match benchmark."""
+    qc, sc = get_clients()
+    query_vector = generate_query_embedding("popular movies")
+
+    engines = [QdrantEngine(qc), S3VectorEngine(sc)]
+    benchmark_data = [engine.search(query_vector, limit=5) for engine in engines]
+
+    report('TEST 02: Filter — Exact Match (genre = "Sci-Fi")', benchmark_data)
+
+
+if __name__ == "__main__":
+    run()
     display_results(results)
 
 if __name__ == "__main__":

@@ -1,12 +1,14 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from qdrant_client import models
+
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
+
 
 @dataclass(frozen=True)
 class SearchResult:
@@ -16,28 +18,31 @@ class SearchResult:
     latency_ms: float
     metadata: Dict[str, Any]
 
+
 class VectorBenchmark(ABC):
     """Encapsulates common behavior for all vector database tests."""
+
     def __init__(self, client):
         self.client = client
 
     @abstractmethod
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        """Subclasses implement specific filter logic here."""
         pass
 
     def get_latency(self, start_time: float) -> float:
         return (time.perf_counter() - start_time) * 1000
 
+
 class QdrantEngine(VectorBenchmark):
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
-        
+
         # Negation using 'must_not'
         query_filter = models.Filter(
             must_not=[
                 models.FieldCondition(
-                    key="language", 
-                    match=models.MatchValue(value="English")
+                    key="language", match=models.MatchValue(value="English")
                 ),
             ]
         )
@@ -52,13 +57,15 @@ class QdrantEngine(VectorBenchmark):
 
         return [
             SearchResult(
-                title=p.payload['title'],
+                title=p.payload["title"],
                 score=p.score,
                 platform="Qdrant",
                 latency_ms=self.get_latency(start),
-                metadata=p.payload
-            ) for p in response.points
+                metadata=p.payload,
+            )
+            for p in response.points
         ]
+
 
 class S3VectorEngine(VectorBenchmark):
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
@@ -79,15 +86,18 @@ class S3VectorEngine(VectorBenchmark):
 
         return [
             SearchResult(
-                title=v["metadata"]['title'],
+                title=v["metadata"]["title"],
                 score=v["distance"],
                 platform="S3 Vectors",
                 latency_ms=self.get_latency(start),
-                metadata=v["metadata"]
-            ) for v in response.get("vectors", [])
+                metadata=v["metadata"],
+            )
+            for v in response.get("vectors", [])
         ]
 
-def report(test_name: str, result_groups: List[List[SearchResult]]):
+
+def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
+    """Prints a formatted benchmark report separating results per engine."""
     print("=" * 60)
     print(f"RUNNING: {test_name}")
     print("=" * 60)
@@ -95,22 +105,27 @@ def report(test_name: str, result_groups: List[List[SearchResult]]):
     for results in result_groups:
         if not results:
             continue
-        
+
         engine_meta = results[0]
         print(f"\n{engine_meta.platform} ({engine_meta.latency_ms:.0f}ms):")
-        
+
         for r in results:
-            meta_str = ", ".join([f"{k}={v}" for k, v in r.metadata.items() if k != 'title'])
+            meta_str = ", ".join(
+                [f"{k}={v}" for k, v in r.metadata.items() if k != "title"]
+            )
             print(f"  {r.title} — {meta_str}, score={r.score:.4f}")
 
-def run():
+
+def run() -> None:
+    """Entry point: runs filter negation benchmark."""
     qc, sc = get_clients()
     query_vector = generate_query_embedding("great international films")
-    
+
     engines = [QdrantEngine(qc), S3VectorEngine(sc)]
     benchmark_data = [engine.search(query_vector, limit=5) for engine in engines]
 
     report('TEST 06: Filter — Negation (language != "English")', benchmark_data)
+
 
 if __name__ == "__main__":
     run()

@@ -1,46 +1,49 @@
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Protocol
+from typing import Any, Dict, List
 
 from qdrant_client import models
+
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
 
-@dataclass(frozen=True)
-class MovieMetadata:
-    title: str
-    genre: str
-    year: int
-    rating: float
-    description: str
-    director: str
-    language:str
 
 @dataclass(frozen=True)
 class SearchResult:
-    metadata: MovieMetadata
+    title: str
     score: float
     platform: str
     latency_ms: float
+    metadata: Dict[str, Any]
 
 
-class VectorStore(Protocol):
-    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
-        ...
+class VectorBenchmark(ABC):
+    """Encapsulates common behavior for all vector database tests."""
 
-class QdrantStore:
     def __init__(self, client):
         self.client = client
 
+    @abstractmethod
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        """Subclasses implement specific filter logic here."""
+        pass
 
+    def get_latency(self, start_time: float) -> float:
+        return (time.perf_counter() - start_time) * 1000
+
+
+class QdrantEngine(VectorBenchmark):
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
-        
-        # Define Filter Logic
-        filter_query = models.Filter(
+
+        # Combined AND filter: Sci-Fi AND year >= 2010 AND rating > 7.5
+        query_filter = models.Filter(
             must=[
-                models.FieldCondition(key="genre", match=models.MatchValue(value="Sci-Fi")),
+                models.FieldCondition(
+                    key="genre", match=models.MatchValue(value="Sci-Fi")
+                ),
                 models.FieldCondition(key="year", range=models.Range(gte=2010)),
                 models.FieldCondition(key="rating", range=models.Range(gt=7.5)),
             ]
@@ -50,29 +53,28 @@ class QdrantStore:
             collection_name=QDRANT_COLLECTION,
             query=vector,
             limit=limit,
-            query_filter=filter_query,
+            query_filter=query_filter,
             with_payload=True,
         )
 
-        latency = (time.perf_counter() - start) * 1000
         return [
             SearchResult(
-                metadata=MovieMetadata(**p.payload),
+                title=p.payload["title"],
                 score=p.score,
                 platform="Qdrant",
-                latency_ms=latency
-            ) for p in response.points
+                latency_ms=self.get_latency(start),
+                metadata=p.payload,
+            )
+            for p in response.points
         ]
 
-class S3VectorStore:
-    def __init__(self, client):
-        self.client = client
 
+class S3VectorEngine(VectorBenchmark):
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
-        
-        # Define Filter Logic
-        filter_query = {
+
+        # Combined AND filter using '$and'
+        query_filter = {
             "$and": [
                 {"genre": "Sci-Fi"},
                 {"year": {"$gte": 2010}},
@@ -85,45 +87,56 @@ class S3VectorStore:
             indexName=S3V_INDEX_NAME,
             queryVector={"float32": vector},
             topK=limit,
-            filter=filter_query,
+            filter=query_filter,
             returnDistance=True,
             returnMetadata=True,
         )
 
-        latency = (time.perf_counter() - start) * 1000
         return [
             SearchResult(
-                metadata=MovieMetadata(**v["metadata"]),
+                title=v["metadata"]["title"],
                 score=v["distance"],
                 platform="S3 Vectors",
-                latency_ms=latency
-            ) for v in response.get("vectors", [])
+                latency_ms=self.get_latency(start),
+                metadata=v["metadata"],
+            )
+            for v in response.get("vectors", [])
         ]
 
 
-def print_benchmark_report(results: List[SearchResult]):
-    if not results:
-        return
-    
-    first = results[0]
-    print(f"\n{first.platform} ({first.latency_ms:.0f}ms):")
-    for r in results:
-        m = r.metadata
-        print(f"  {m.title} — genre={m.genre}, year={m.year}, rating={m.rating}")
+def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
+    """Prints a formatted benchmark report separating results per engine."""
+    print("=" * 60)
+    print(f"RUNNING: {test_name}")
+    print("=" * 60)
 
-def run_test_04():
+    for results in result_groups:
+        if not results:
+            continue
+
+        engine_meta = results[0]
+        print(f"\n{engine_meta.platform} ({engine_meta.latency_ms:.0f}ms):")
+
+        for r in results:
+            meta_str = ", ".join(
+                [f"{k}={v}" for k, v in r.metadata.items() if k != "title"]
+            )
+            print(f"  {r.title} — {meta_str}, score={r.score:.4f}")
+
+
+def run() -> None:
+    """Entry point: runs combined AND filter benchmark."""
     qc, sc = get_clients()
     query_vector = generate_query_embedding("best sci-fi movies")
-    
-    stores: List[VectorStore] = [QdrantStore(qc), S3VectorStore(sc)]
 
-    print("=" * 60)
-    print("TEST 04: Filter — Combined AND (Sci-Fi + year>=2010 + rating>7.5)")
-    print("=" * 60)
+    engines = [QdrantEngine(qc), S3VectorEngine(sc)]
+    benchmark_data = [engine.search(query_vector, limit=5) for engine in engines]
 
-    for store in stores:
-        results = store.search(query_vector, limit=5)
-        print_benchmark_report(results)
+    report(
+        "TEST 04: Filter — Combined AND (Sci-Fi + year>=2010 + rating>7.5)",
+        benchmark_data,
+    )
+
 
 if __name__ == "__main__":
-    run_test_04()
+    run()

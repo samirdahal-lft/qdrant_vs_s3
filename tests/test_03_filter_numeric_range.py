@@ -1,115 +1,134 @@
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from qdrant_client import models
+
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
 
+MIN_YEAR = 2010
+
 
 @dataclass(frozen=True)
 class SearchResult:
-    """A unified data structure for search results across different platforms."""
-
     title: str
-    year: int
     score: float
     platform: str
     latency_ms: float
+    metadata: Dict[str, Any]
 
 
-class VectorSearchService:
-    """Encapsulates logic for querying different vector databases."""
+class VectorBenchmark(ABC):
+    """Encapsulates common behavior for all vector database tests."""
 
-    def __init__(self):
-        self.qdrant, self.s3_vectors = get_clients()
+    def __init__(self, client):
+        self.client = client
 
-    def search_qdrant(self, vector: List[float], min_year: int) -> List[SearchResult]:
-        start_time = time.perf_counter()
+    @abstractmethod
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        """Subclasses implement specific filter logic here."""
+        pass
 
-        response = self.qdrant.query_points(
+    def get_latency(self, start_time: float) -> float:
+        return (time.perf_counter() - start_time) * 1000
+
+
+class QdrantEngine(VectorBenchmark):
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        start = time.perf_counter()
+
+        # Numeric range filter using gte
+        query_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="year",
+                    range=models.Range(gte=MIN_YEAR),
+                )
+            ]
+        )
+
+        response = self.client.query_points(
             collection_name=QDRANT_COLLECTION,
             query=vector,
-            limit=5,
-            query_filter=models.Filter(
-                must=[
-                    models.FieldCondition(key="year", range=models.Range(gte=min_year))
-                ]
-            ),
+            limit=limit,
+            query_filter=query_filter,
             with_payload=True,
         )
 
-        latency = self._calculate_latency(start_time)
         return [
             SearchResult(
                 title=p.payload["title"],
-                year=p.payload["year"],
                 score=p.score,
                 platform="Qdrant",
-                latency_ms=latency,
+                latency_ms=self.get_latency(start),
+                metadata=p.payload,
             )
             for p in response.points
         ]
 
-    def search_s3_vectors(
-        self, vector: List[float], min_year: int
-    ) -> List[SearchResult]:
-        start_time = time.perf_counter()
 
-        response = self.s3_vectors.query_vectors(
+class S3VectorEngine(VectorBenchmark):
+    def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        start = time.perf_counter()
+
+        # Numeric range filter using '$gte'
+        query_filter = {"year": {"$gte": MIN_YEAR}}
+
+        response = self.client.query_vectors(
             vectorBucketName=S3V_BUCKET_NAME,
             indexName=S3V_INDEX_NAME,
             queryVector={"float32": vector},
-            topK=5,
-            filter={"year": {"$gte": min_year}},
+            topK=limit,
+            filter=query_filter,
             returnDistance=True,
             returnMetadata=True,
         )
 
-        latency = self._calculate_latency(start_time)
         return [
             SearchResult(
                 title=v["metadata"]["title"],
-                year=v["metadata"]["year"],
                 score=v["distance"],
                 platform="S3 Vectors",
-                latency_ms=latency,
+                latency_ms=self.get_latency(start),
+                metadata=v["metadata"],
             )
             for v in response.get("vectors", [])
         ]
 
-    @staticmethod
-    def _calculate_latency(start_time: float) -> float:
-        return (time.perf_counter() - start_time) * 1000
+
+def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
+    """Prints a formatted benchmark report separating results per engine."""
+    print("=" * 60)
+    print(f"RUNNING: {test_name}")
+    print("=" * 60)
+
+    for results in result_groups:
+        if not results:
+            continue
+
+        engine_meta = results[0]
+        print(f"\n{engine_meta.platform} ({engine_meta.latency_ms:.0f}ms):")
+
+        for r in results:
+            meta_str = ", ".join(
+                [f"{k}={v}" for k, v in r.metadata.items() if k != "title"]
+            )
+            print(f"  {r.title} — {meta_str}, score={r.score:.4f}")
 
 
-def report_results(results: List[SearchResult]):
-    """Handles the UI logic independently of the data retrieval."""
-    if not results:
-        print("No results found.")
-        return
-
-    platform_name = results[0].platform
-    latency = results[0].latency_ms
-
-    print(f"\n{platform_name} ({latency:.0f}ms):")
-    for res in results:
-        print(f"  {res.title} — year={res.year}, score={res.score:.4f}")
-
-
-def run_benchmark():
-    """Main execution flow following the 'Tell, Don't Ask' principle."""
-    service = VectorSearchService()
+def run() -> None:
+    """Entry point: runs filter numeric range benchmark."""
+    qc, sc = get_clients()
     query_vector = generate_query_embedding("great modern movies")
-    target_year = 2010
 
-    qdrant_results = service.search_qdrant(query_vector, target_year)
-    s3_results = service.search_s3_vectors(query_vector, target_year)
+    engines = [QdrantEngine(qc), S3VectorEngine(sc)]
+    benchmark_data = [engine.search(query_vector, limit=5) for engine in engines]
 
-    report_results(qdrant_results)
-    report_results(s3_results)
+    report(f"TEST 03: Filter — Numeric Range (year >= {MIN_YEAR})", benchmark_data)
 
 
 if __name__ == "__main__":
-    run_benchmark()
+    run()
