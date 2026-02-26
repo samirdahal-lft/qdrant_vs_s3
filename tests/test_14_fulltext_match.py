@@ -4,13 +4,37 @@ from dataclasses import dataclass
 from typing import List
 
 from qdrant_client import models
+
 from core.clients import get_qdrant
 from core.config import QDRANT_COLLECTION
 from core.embeddings import generate_query_embedding
 
+"""
+Test 14 : Full-Text Match Filter (Keyword Search in description).
+
+Uses Qdrant’s text-index + ``MatchText`` filter to find movies
+whose description contains a keyword. S3 Vectors lacks this.
+"""
+
 
 @dataclass(frozen=True)
 class FullTextResult:
+    """Immutable record for a full-text match hit.
+
+    Attributes
+    ----------
+    title : str
+        Movie title.
+    keyword : str
+        The keyword searched for.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock search time in milliseconds.
+    is_supported : bool
+        ``False`` when the engine lacks full-text filtering.
+    """
+
     title: str
     keyword: str
     platform: str
@@ -19,6 +43,19 @@ class FullTextResult:
 
 
 class TextSearchBenchmark(ABC):
+    """Abstract base for full-text search engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
+
     def __init__(self, client):
         self.client = client
 
@@ -26,21 +63,47 @@ class TextSearchBenchmark(ABC):
     def search_keyword_in_description(
         self, keyword: str, limit: int
     ) -> List[FullTextResult]:
+        """Search for a keyword within the description field.
+
+        Parameters
+        ----------
+        keyword : str
+            Word to match inside movie descriptions.
+        limit : int
+            Maximum number of results.
+
+        Returns
+        -------
+        List[FullTextResult]
+            Matching results.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
-
-
 class QdrantTextEngine(TextSearchBenchmark):
+    """Qdrant implementation — ``MatchText`` filter with text index."""
+
     def __init__(self, client):
         super().__init__(client)
         self._ensure_text_index()
 
     def _ensure_text_index(self):
-        """Standardizes the indexing of the text field for keyword matching."""
+        """Create a text payload index on the description field."""
         self.client.create_payload_index(
             collection_name=QDRANT_COLLECTION,
             field_name="description",
@@ -81,7 +144,7 @@ class QdrantTextEngine(TextSearchBenchmark):
 
 
 class S3TextEngine(TextSearchBenchmark):
-    """Signals that full-text filtering is unavailable."""
+    """Null-object — S3 Vectors has no full-text filtering."""
 
     def search_keyword_in_description(
         self, keyword: str, limit: int
@@ -93,6 +156,13 @@ class S3TextEngine(TextSearchBenchmark):
 
 
 def report_search(results_groups: List[List[FullTextResult]]):
+    """Print full-text search results per engine.
+
+    Parameters
+    ----------
+    results_groups : List[List[FullTextResult]]
+        One inner list per engine.
+    """
     for results in results_groups:
         if not results:
             continue
@@ -112,6 +182,7 @@ def report_search(results_groups: List[List[FullTextResult]]):
 
 # --- 5. Main Execution ---
 def run():
+    """Run full-text match benchmark across multiple keywords."""
     qc = get_qdrant()
 
     engines: List[TextSearchBenchmark] = [QdrantTextEngine(qc), S3TextEngine(None)]

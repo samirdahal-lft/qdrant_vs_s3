@@ -1,16 +1,40 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from qdrant_client import models
+
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
 
+"""
+Test 07 : Filter — Set Membership (genre IN [Action, Thriller]).
+
+Matches records whose genre belongs to a set and compares
+both backends for correctness and latency.
+"""
+
 
 @dataclass(frozen=True)
 class SearchResult:
+    """Immutable record returned by every engine search call.
+
+    Attributes
+    ----------
+    title : str
+        Movie title.
+    score : float
+        Similarity score or distance.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock search time in milliseconds.
+    metadata : Dict[str, Any]
+        Full payload / metadata for the matched point.
+    """
+
     title: str
     score: float
     platform: str
@@ -19,20 +43,59 @@ class SearchResult:
 
 
 class VectorBenchmark(ABC):
-    """Encapsulates common behavior for all vector database tests."""
+    """Abstract base for vector-database search engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
 
     def __init__(self, client):
         self.client = client
 
     @abstractmethod
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
+        """Execute a filtered vector search.
+
+        Parameters
+        ----------
+        vector : List[float]
+            Query embedding vector.
+        limit : int
+            Maximum number of results.
+
+        Returns
+        -------
+        List[SearchResult]
+            Ranked results matching the filter.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
 class QdrantEngine(VectorBenchmark):
+    """Qdrant implementation — set membership via ``should`` comprehension."""
+
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
 
@@ -65,6 +128,8 @@ class QdrantEngine(VectorBenchmark):
 
 
 class S3VectorEngine(VectorBenchmark):
+    """S3 Vectors implementation — set membership via ``$in`` operator."""
+
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
 
@@ -94,6 +159,15 @@ class S3VectorEngine(VectorBenchmark):
 
 
 def report(test_name: str, result_groups: List[List[SearchResult]]):
+    """Print a formatted benchmark report, one section per engine.
+
+    Parameters
+    ----------
+    test_name : str
+        Human-readable label for the report header.
+    result_groups : List[List[SearchResult]]
+        One inner list per engine containing ranked results.
+    """
     print("=" * 60)
     print(f"RUNNING: {test_name}")
     print("=" * 60)
@@ -113,6 +187,7 @@ def report(test_name: str, result_groups: List[List[SearchResult]]):
 
 
 def run():
+    """Run set membership filter benchmark on both engines."""
     qc, sc = get_clients()
     query_vector = generate_query_embedding("exciting intense movies")
 

@@ -1,18 +1,41 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from qdrant_client import QdrantClient, models
 from fastembed import SparseTextEmbedding
+from qdrant_client import QdrantClient, models
 
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
 from core.dataset import MOVIES
 from core.embeddings import generate_movie_embeddings, generate_query_embedding
 
+"""
+Test 12 : Hybrid Search (Dense + Sparse / BM25 with RRF Fusion).
+
+Demonstrates Qdrant-only hybrid search using dense and sparse
+vectors fused via Reciprocal Rank Fusion (RRF).
+"""
+
 
 @dataclass(frozen=True)
 class HybridSearchResult:
+    """Immutable record for a hybrid-search hit.
+
+    Attributes
+    ----------
+    title : str
+        Movie title.
+    score : float
+        Fused similarity score.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock search time in milliseconds.
+    is_supported : bool
+        ``False`` when the engine lacks hybrid search.
+    """
+
     title: str
     score: float
     platform: str
@@ -21,20 +44,67 @@ class HybridSearchResult:
 
 
 class HybridSearchBenchmark(ABC):
+    """Abstract base for hybrid-search engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
+
     def __init__(self, client):
         self.client = client
 
     @abstractmethod
     def search_hybrid(self, query_text: str, limit: int) -> List[HybridSearchResult]:
+        """Run a hybrid dense + sparse search.
+
+        Parameters
+        ----------
+        query_text : str
+            Natural-language query string.
+        limit : int
+            Maximum number of results.
+
+        Returns
+        -------
+        List[HybridSearchResult]
+            Fused ranked results.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
-
-
 class QdrantHybridEngine(HybridSearchBenchmark):
+    """Qdrant implementation — dense + BM25 sparse with RRF fusion.
+
+    Attributes
+    ----------
+    COLLECTION : str
+        Dedicated hybrid-search collection name.
+    sparse_model : SparseTextEmbedding
+        BM25 sparse encoder.
+    """
+
     COLLECTION = "movies_hybrid"
 
     def __init__(self, client):
@@ -43,7 +113,7 @@ class QdrantHybridEngine(HybridSearchBenchmark):
         self._setup_collection()
 
     def _setup_collection(self):
-        """Standardizes collection setup logic."""
+        """Create the hybrid collection with dense + sparse vector configs."""
         if self.client.collection_exists(self.COLLECTION):
             self.client.delete_collection(self.COLLECTION)
 
@@ -61,6 +131,7 @@ class QdrantHybridEngine(HybridSearchBenchmark):
         self._ingest_data()
 
     def _ingest_data(self):
+        """Embed movies and upsert dense + sparse vectors."""
         dense_embeddings = generate_movie_embeddings(MOVIES)
         points = []
         for m in MOVIES:
@@ -113,13 +184,22 @@ class QdrantHybridEngine(HybridSearchBenchmark):
 
 
 class S3HybridEngine(HybridSearchBenchmark):
-    """Null Object Pattern: Explicitly handles lack of support for Hybrid Search."""
+    """Null-object — S3 Vectors does not support hybrid search."""
 
     def search_hybrid(self, query_text: str, limit: int) -> List[HybridSearchResult]:
         return [HybridSearchResult("N/A", 0.0, "S3 Vectors", 0.0, is_supported=False)]
 
 
 def report(query_text: str, result_groups: List[List[HybridSearchResult]]):
+    """Print hybrid-search benchmark results.
+
+    Parameters
+    ----------
+    query_text : str
+        The natural-language query that was executed.
+    result_groups : List[List[HybridSearchResult]]
+        One inner list per engine.
+    """
     print("=" * 60)
     print(f"TEST 12: Hybrid Search — Query: '{query_text}'")
     print("=" * 60)
@@ -140,6 +220,7 @@ def report(query_text: str, result_groups: List[List[HybridSearchResult]]):
 
 
 def run():
+    """Run hybrid search benchmark (Qdrant only)."""
     qc = QdrantClient(url=QDRANT_URL)
     query = "space robots adventure"
 

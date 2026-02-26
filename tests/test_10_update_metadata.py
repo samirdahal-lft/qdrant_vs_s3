@@ -1,4 +1,8 @@
-"""Test 10: Update Metadata — Qdrant vs S3 Vectors."""
+"""Test 10 : Update Metadata — Qdrant vs S3 Vectors.
+
+Compares partial-update (Qdrant ``set_payload``) with full
+re-put (S3 Vectors ``put_vectors``) for a single field change.
+"""
 
 import time
 from abc import ABC, abstractmethod
@@ -13,6 +17,28 @@ from core.embeddings import generate_movie_embeddings
 
 @dataclass(frozen=True)
 class UpdateResult:
+    """Immutable record capturing one metadata-update operation.
+
+    Attributes
+    ----------
+    movie_id : str
+        Targeted movie identifier.
+    title : str
+        Human-readable movie title.
+    old_value : Any
+        Original field value before update.
+    new_value : Any
+        Requested new field value.
+    verified_value : Any
+        Value read back after update for verification.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock update time in milliseconds.
+    method_description : str
+        Short description of the API call used.
+    """
+
     movie_id: str
     title: str
     old_value: Any
@@ -24,7 +50,18 @@ class UpdateResult:
 
 
 class VectorBenchmark(ABC):
-    """Encapsulates common behavior for metadata update operations across platforms."""
+    """Abstract base for metadata-update engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
 
     def __init__(self, client):
         self.client = client
@@ -33,14 +70,43 @@ class VectorBenchmark(ABC):
     def update_metadata(
         self, movie_id: str, field: str, new_value: Any
     ) -> UpdateResult:
-        """Subclasses implement platform-specific metadata update logic."""
+        """Perform a metadata field update.
+
+        Parameters
+        ----------
+        movie_id : str
+            Target movie identifier.
+        field : str
+            Metadata field name to modify.
+        new_value : Any
+            Desired new value for *field*.
+
+        Returns
+        -------
+        UpdateResult
+            Outcome including verified read-back.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
 class QdrantEngine(VectorBenchmark):
+    """Qdrant implementation — partial update via ``set_payload()``."""
+
     def update_metadata(
         self, movie_id: str, field: str, new_value: Any
     ) -> UpdateResult:
@@ -72,6 +138,21 @@ class QdrantEngine(VectorBenchmark):
 
 
 class S3VectorEngine(VectorBenchmark):
+    """S3 Vectors implementation — full re-put via ``put_vectors()``.
+
+    Parameters
+    ----------
+    client : object
+        S3 Vectors SDK client.
+    embeddings : dict
+        Pre-computed movie embeddings keyed by movie ID.
+
+    Attributes
+    ----------
+    embeddings : dict
+        Stored embeddings for re-upload.
+    """
+
     def __init__(self, client, embeddings):
         super().__init__(client)
         self.embeddings = embeddings
@@ -130,7 +211,15 @@ class S3VectorEngine(VectorBenchmark):
 
 
 def report(test_name: str, results: List[UpdateResult]) -> None:
-    """Prints a comparison report for metadata update operations."""
+    """Print a comparison report for metadata update operations.
+
+    Parameters
+    ----------
+    test_name : str
+        Human-readable label for the report header.
+    results : List[UpdateResult]
+        One result per engine.
+    """
     print("=" * 60)
     print(f"RUNNING: {test_name}")
     print("=" * 60)
@@ -149,7 +238,7 @@ def report(test_name: str, results: List[UpdateResult]) -> None:
 
 
 def run() -> None:
-    """Entry point: runs metadata update benchmark."""
+    """Run metadata update benchmark on both engines."""
     qc, sc = get_clients()
     embeddings = generate_movie_embeddings(MOVIES)
 

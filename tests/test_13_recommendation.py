@@ -1,15 +1,43 @@
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from qdrant_client import models
+
 from core.clients import get_qdrant
 from core.config import QDRANT_COLLECTION, qdrant_id
+
+"""
+Test 13 : Recommendation API (Positive / Negative Examples).
+
+Uses Qdrant’s native recommendation query with positive and
+negative example IDs. S3 Vectors lacks this feature.
+"""
 
 
 @dataclass(frozen=True)
 class RecommendResult:
+    """Immutable record for a recommendation hit.
+
+    Attributes
+    ----------
+    title : str
+        Movie title.
+    genre : str
+        Movie genre.
+    year : int
+        Release year.
+    score : float
+        Recommendation similarity score.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock search time in milliseconds.
+    is_supported : bool
+        ``False`` when the engine lacks a recommendation API.
+    """
+
     title: str
     genre: str
     year: int
@@ -20,6 +48,19 @@ class RecommendResult:
 
 
 class RecommendationBenchmark(ABC):
+    """Abstract base for recommendation engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
+
     def __init__(self, client):
         self.client = client
 
@@ -27,16 +68,43 @@ class RecommendationBenchmark(ABC):
     def get_recommendations(
         self, positive_ids: List[str], negative_ids: List[str], limit: int
     ) -> List[RecommendResult]:
-        """Subclasses implement platform-specific recommendation logic."""
+        """Return recommendations using positive/negative examples.
+
+        Parameters
+        ----------
+        positive_ids : List[str]
+            IDs of movies the user liked.
+        negative_ids : List[str]
+            IDs of movies the user disliked.
+        limit : int
+            Maximum number of results.
+
+        Returns
+        -------
+        List[RecommendResult]
+            Ranked recommendations.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
-
-
 class QdrantRecommendEngine(RecommendationBenchmark):
+    """Qdrant implementation — ``RecommendQuery`` with average-vector strategy."""
+
     def get_recommendations(
         self, positive_ids: List[str], negative_ids: List[str], limit: int
     ) -> List[RecommendResult]:
@@ -73,13 +141,22 @@ class QdrantRecommendEngine(RecommendationBenchmark):
 
 
 class S3RecommendEngine(RecommendationBenchmark):
-    """Signals lack of support for Recommendation API."""
+    """Null-object — S3 Vectors has no recommendation API."""
 
     def get_recommendations(self, *args, **kwargs) -> List[RecommendResult]:
         return [RecommendResult("", "", 0, 0.0, "S3 Vectors", 0.0, is_supported=False)]
 
 
 def report_recommendations(title: str, results_list: List[List[RecommendResult]]):
+    """Print recommendation benchmark results.
+
+    Parameters
+    ----------
+    title : str
+        Human-readable scenario label.
+    results_list : List[List[RecommendResult]]
+        One inner list per engine.
+    """
     print(f"\n--- {title} ---")
 
     for results in results_list:
@@ -97,6 +174,7 @@ def report_recommendations(title: str, results_list: List[List[RecommendResult]]
 
 
 def run():
+    """Run recommendation benchmark (Qdrant only, two scenarios)."""
     qc = get_qdrant()
 
     engines: List[RecommendationBenchmark] = [

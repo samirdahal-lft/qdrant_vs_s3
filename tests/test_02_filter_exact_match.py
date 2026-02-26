@@ -9,9 +9,32 @@ from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
 
+"""
+Test 02 : Filter — Exact Match (genre = "Sci-Fi").
+
+Applies an exact-match metadata filter and compares both
+backends for result accuracy and latency.
+"""
+
 
 @dataclass(frozen=True)
 class SearchResult:
+    """Immutable record returned by every engine search call.
+
+    Attributes
+    ----------
+    title : str
+        Movie title.
+    score : float
+        Similarity score or distance.
+    platform : str
+        Engine identifier ("Qdrant" / "S3 Vectors").
+    latency_ms : float
+        Wall-clock search time in milliseconds.
+    metadata : Dict[str, Any]
+        Full payload / metadata for the matched point.
+    """
+
     title: str
     score: float
     platform: str
@@ -20,21 +43,59 @@ class SearchResult:
 
 
 class VectorBenchmark(ABC):
-    """Encapsulates common behavior for all vector database tests."""
+    """Abstract base for vector-database search engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client used for every search call.
+    """
 
     def __init__(self, client):
         self.client = client
 
     @abstractmethod
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
-        """Subclasses implement specific filter logic here."""
+        """Execute a filtered vector search.
+
+        Parameters
+        ----------
+        vector : List[float]
+            Query embedding vector.
+        limit : int
+            Maximum number of results.
+
+        Returns
+        -------
+        List[SearchResult]
+            Ranked results matching the filter.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value captured before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
 class QdrantEngine(VectorBenchmark):
+    """Qdrant implementation — exact match via ``must`` / ``MatchValue``."""
+
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
 
@@ -69,6 +130,8 @@ class QdrantEngine(VectorBenchmark):
 
 
 class S3VectorEngine(VectorBenchmark):
+    """S3 Vectors implementation — exact match via key-value filter."""
+
     def search(self, vector: List[float], limit: int) -> List[SearchResult]:
         start = time.perf_counter()
 
@@ -98,7 +161,15 @@ class S3VectorEngine(VectorBenchmark):
 
 
 def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
-    """Prints a formatted benchmark report separating results per engine."""
+    """Print a formatted benchmark report, one section per engine.
+
+    Parameters
+    ----------
+    test_name : str
+        Human-readable label for the report header.
+    result_groups : List[List[SearchResult]]
+        One inner list per engine containing ranked results.
+    """
     print("=" * 60)
     print(f"RUNNING: {test_name}")
     print("=" * 60)
@@ -118,7 +189,7 @@ def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
 
 
 def run() -> None:
-    """Entry point: runs filter exact-match benchmark."""
+    """Run exact-match filter benchmark on both engines."""
     qc, sc = get_clients()
     query_vector = generate_query_embedding("popular movies")
 
@@ -130,7 +201,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-    display_results(results)
-
-if __name__ == "__main__":
-    main()

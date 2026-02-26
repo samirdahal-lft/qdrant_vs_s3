@@ -1,4 +1,8 @@
-"""Test 11: Delete Vectors — Qdrant vs S3 Vectors."""
+"""Test 11 : Delete Vectors — Qdrant vs S3 Vectors.
+
+Removes a single vector from both backends and verifies the
+count drop and latency difference.
+"""
 
 import time
 from abc import ABC, abstractmethod
@@ -13,6 +17,24 @@ from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME, qdra
 
 @dataclass(frozen=True)
 class DeleteResult:
+    """Immutable record capturing one vector-deletion operation.
+
+    Attributes
+    ----------
+    movie_id : str
+        Identifier of the deleted movie.
+    count_before : int
+        Number of vectors before deletion.
+    count_after : int
+        Number of vectors after deletion.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock deletion time in milliseconds.
+    method_description : str
+        Short description of the API call used.
+    """
+
     movie_id: str
     count_before: int
     count_after: int
@@ -22,22 +44,59 @@ class DeleteResult:
 
 
 class VectorBenchmark(ABC):
-    """Encapsulates common behavior for delete operations across platforms."""
+    """Abstract base for vector-deletion engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
 
     def __init__(self, client):
         self.client = client
 
     @abstractmethod
     def delete_vector(self, movie_id: str) -> DeleteResult:
-        """Subclasses implement platform-specific vector deletion logic."""
+        """Delete a single vector by its identifier.
+
+        Parameters
+        ----------
+        movie_id : str
+            Target movie identifier.
+
+        Returns
+        -------
+        DeleteResult
+            Outcome including before/after counts.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
 class QdrantEngine(VectorBenchmark):
+    """Qdrant implementation — deletion via ``delete(points=[...])``."""
+
     def _count(self) -> int:
+        """Return the current point count in the collection."""
         return self.client.get_collection(QDRANT_COLLECTION).points_count
 
     def delete_vector(self, movie_id: str) -> DeleteResult:
@@ -60,7 +119,10 @@ class QdrantEngine(VectorBenchmark):
 
 
 class S3VectorEngine(VectorBenchmark):
+    """S3 Vectors implementation — deletion via ``delete_vectors()``."""
+
     def _count(self) -> int:
+        """Return the current vector count in the index."""
         return len(
             self.client.list_vectors(
                 vectorBucketName=S3V_BUCKET_NAME,
@@ -90,7 +152,15 @@ class S3VectorEngine(VectorBenchmark):
 
 
 def report(test_name: str, results: List[DeleteResult]) -> None:
-    """Prints a comparison report for deletion operations."""
+    """Print a comparison report for deletion operations.
+
+    Parameters
+    ----------
+    test_name : str
+        Human-readable label for the report header.
+    results : List[DeleteResult]
+        One result per engine.
+    """
     print("=" * 60)
     print(f"RUNNING: {test_name}")
     print("=" * 60)
@@ -107,7 +177,7 @@ def report(test_name: str, results: List[DeleteResult]) -> None:
 
 
 def run() -> None:
-    """Entry point: runs vector deletion benchmark."""
+    """Run vector deletion benchmark on both engines."""
     qc, sc = get_clients()
     target_id = "mov_50"  # Everything Everywhere All at Once
 

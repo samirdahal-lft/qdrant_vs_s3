@@ -4,20 +4,56 @@ from dataclasses import dataclass
 from typing import List
 
 from qdrant_client import QdrantClient, models
+
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
 from core.embeddings import generate_query_embedding
+
+"""
+Test 15 : Geo Filtering — Radius Search (50 km of Paris).
+
+Uses Qdrant’s native geo-radius filter on a synthetic dataset.
+S3 Vectors has no spatial indexing support.
+"""
 
 COLLECTION = "movies_geo"
 
 
 @dataclass(frozen=True)
 class GeoLocation:
+    """Simple latitude / longitude pair.
+
+    Attributes
+    ----------
+    lat : float
+        Latitude in decimal degrees.
+    lon : float
+        Longitude in decimal degrees.
+    """
+
     lat: float
     lon: float
 
 
 @dataclass(frozen=True)
 class GeoSearchResult:
+    """Immutable record for a geo-filtered search hit.
+
+    Attributes
+    ----------
+    title : str
+        Movie title.
+    lat : float
+        Latitude of the matched location.
+    lon : float
+        Longitude of the matched location.
+    platform : str
+        Engine identifier.
+    latency_ms : float
+        Wall-clock search time in milliseconds.
+    is_supported : bool
+        ``False`` when the engine lacks geo filtering.
+    """
+
     title: str
     lat: float
     lon: float
@@ -27,6 +63,19 @@ class GeoSearchResult:
 
 
 class GeoBenchmark(ABC):
+    """Abstract base for geo-filtered search engines.
+
+    Parameters
+    ----------
+    client : object
+        Platform-specific SDK client.
+
+    Attributes
+    ----------
+    client : object
+        Injected SDK client.
+    """
+
     def __init__(self, client):
         self.client = client
 
@@ -34,9 +83,37 @@ class GeoBenchmark(ABC):
     def search_nearby(
         self, center: GeoLocation, radius_meters: float, limit: int
     ) -> List[GeoSearchResult]:
+        """Search for vectors within a geographic radius.
+
+        Parameters
+        ----------
+        center : GeoLocation
+            Centre point for the radius search.
+        radius_meters : float
+            Search radius in metres.
+        limit : int
+            Maximum number of results.
+
+        Returns
+        -------
+        List[GeoSearchResult]
+            Matching results within the radius.
+        """
         pass
 
     def get_latency(self, start_time: float) -> float:
+        """Calculate elapsed milliseconds since *start_time*.
+
+        Parameters
+        ----------
+        start_time : float
+            ``time.perf_counter()`` value before the operation.
+
+        Returns
+        -------
+        float
+            Elapsed time in milliseconds.
+        """
         return (time.perf_counter() - start_time) * 1000
 
 
@@ -44,12 +121,14 @@ class GeoBenchmark(ABC):
 
 
 class QdrantGeoEngine(GeoBenchmark):
+    """Qdrant implementation — geo-radius filter on a dedicated collection."""
+
     def __init__(self, client):
         super().__init__(client)
         self._setup_collection()
 
     def _setup_collection(self):
-        """Standardizes the creation of geo-indexed collection."""
+        """Create a geo-indexed collection and ingest synthetic data."""
         if self.client.collection_exists(COLLECTION):
             self.client.delete_collection(COLLECTION)
 
@@ -65,6 +144,7 @@ class QdrantGeoEngine(GeoBenchmark):
         self._ingest_synthetic_data()
 
     def _ingest_synthetic_data(self):
+        """Insert synthetic geo-tagged movie points."""
         movies = [
             {
                 "id": "geo_01",
@@ -142,7 +222,7 @@ class QdrantGeoEngine(GeoBenchmark):
 
 
 class S3GeoEngine(GeoBenchmark):
-    """Explicitly handles the lack of geo-filtering support."""
+    """Null-object — S3 Vectors has no geo filtering support."""
 
     def search_nearby(
         self, center: GeoLocation, radius_meters: float, limit: int
@@ -154,6 +234,7 @@ class S3GeoEngine(GeoBenchmark):
 
 
 def run():
+    """Run geo-radius filter benchmark (Qdrant only)."""
     qc = QdrantClient(url=QDRANT_URL)
     paris_center = GeoLocation(lat=48.8566, lon=2.3522)
     radius = 50000.0  # 50km
