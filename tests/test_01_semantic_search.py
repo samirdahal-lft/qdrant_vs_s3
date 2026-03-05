@@ -1,3 +1,9 @@
+"""Test 01 : Semantic Search (top-K cosine) — Qdrant vs S3 Vectors.
+
+Runs pure vector similarity search (no filters) against both backends
+and compares result quality and latency.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -6,13 +12,6 @@ from typing import Any, Dict, List
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
-
-"""
-Test 01 : Semantic Search (top-K cosine) — Qdrant vs S3 Vectors.
-
-Runs pure vector similarity search (no filters) against both backends
-and compares result quality and latency.
-"""
 
 TOP_K = 5
 

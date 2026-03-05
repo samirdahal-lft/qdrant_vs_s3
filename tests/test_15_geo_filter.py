@@ -1,3 +1,9 @@
+"""Test 15 : Geo Filtering — Radius Search (50 km of Paris).
+
+Uses Qdrant's native geo-radius filter on a synthetic dataset.
+S3 Vectors has no spatial indexing support.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -7,13 +13,6 @@ from qdrant_client import QdrantClient, models
 
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
 from core.embeddings import generate_query_embedding
-
-"""
-Test 15 : Geo Filtering — Radius Search (50 km of Paris).
-
-Uses Qdrant’s native geo-radius filter on a synthetic dataset.
-S3 Vectors has no spatial indexing support.
-"""
 
 COLLECTION = "movies_geo"
 

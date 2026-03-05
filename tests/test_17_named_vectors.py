@@ -1,3 +1,9 @@
+"""Test 17 : Named Vectors (Title vs Description Embeddings).
+
+Stores separate title and description embeddings per point and
+searches against each named vector independently. Qdrant only.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -8,13 +14,6 @@ from qdrant_client import QdrantClient, models
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
 from core.dataset import MOVIES
 from core.embeddings import generate_query_embedding, get_model
-
-"""
-Test 17 : Named Vectors (Title vs Description Embeddings).
-
-Stores separate title and description embeddings per point and
-searches against each named vector independently. Qdrant only.
-"""
 
 COLLECTION = "movies_named"
 
@@ -182,7 +181,9 @@ class S3NamedEngine(NamedVectorBenchmark):
         ]
 
 
-def report_named_search(title: str, results_list: List[List[NamedVectorResult]]):
+def report_named_search(
+    title: str, results_list: List[List[NamedVectorResult]]
+) -> None:
     """Print named-vector search benchmark results.
 
     Parameters
@@ -210,7 +211,7 @@ def report_named_search(title: str, results_list: List[List[NamedVectorResult]])
             print(f"  {i}. {res.title} (score={res.score:.4f})")
 
 
-def run():
+def run() -> None:
     """Run named-vector benchmark (title vs description search)."""
     qc = QdrantClient(url=QDRANT_URL)
     engines = [QdrantNamedEngine(qc), S3NamedEngine(None)]

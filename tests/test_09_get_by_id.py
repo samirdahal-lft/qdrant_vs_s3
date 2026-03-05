@@ -1,3 +1,9 @@
+"""Test 09 : Get Vectors by ID.
+
+Retrieves a single vector by its identifier from both backends
+and compares latency and payload completeness.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -5,13 +11,6 @@ from typing import Any, Dict, List, Optional
 
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME, qdrant_id
-
-"""
-Test 09 : Get Vectors by ID.
-
-Retrieves a single vector by its identifier from both backends
-and compares latency and payload completeness.
-"""
 
 
 @dataclass(frozen=True)
@@ -140,7 +139,7 @@ class S3VectorEngine(VectorBenchmark):
         )
 
 
-def report(test_name: str, results: List[Optional[RetrievalResult]]):
+def report(test_name: str, results: List[Optional[RetrievalResult]]) -> None:
     """Print a formatted benchmark report for ID-based retrieval.
 
     Parameters
@@ -168,7 +167,7 @@ def report(test_name: str, results: List[Optional[RetrievalResult]]):
             print(f"  {detail}")
 
 
-def run():
+def run() -> None:
     """Run ID-based retrieval benchmark on both engines."""
     qc, sc = get_clients()
     target_id = "mov_01"  # Inception

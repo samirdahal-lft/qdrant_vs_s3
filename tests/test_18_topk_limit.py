@@ -1,3 +1,9 @@
+"""Test 18 : TopK Boundary Analysis (The 100-limit Wall).
+
+Probes the maximum ``topK`` each backend allows and records
+whether the request succeeds or is rejected.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -6,13 +12,6 @@ from typing import List
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
-
-"""
-Test 18 : TopK Boundary Analysis (The 100-limit Wall).
-
-Probes the maximum ``topK`` each backend allows and records
-whether the request succeeds or is rejected.
-"""
 
 
 @dataclass(frozen=True)
@@ -167,7 +166,7 @@ def run():
     s_engine = S3LimitEngine(sc)
 
     print("=" * 60)
-    print("TEST 22: TopK Boundary Analysis (The 100-limit Wall)")
+    print("TEST 18: TopK Boundary Analysis (The 100-limit Wall)")
     print("=" * 60)
 
     print("\n--- Scenario A: Requesting 100 results ---")

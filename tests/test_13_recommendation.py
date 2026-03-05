@@ -1,3 +1,9 @@
+"""Test 13 : Recommendation API (Positive / Negative Examples).
+
+Uses Qdrant's native recommendation query with positive and
+negative example IDs. S3 Vectors lacks this feature.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -7,13 +13,6 @@ from qdrant_client import models
 
 from core.clients import get_qdrant
 from core.config import QDRANT_COLLECTION, qdrant_id
-
-"""
-Test 13 : Recommendation API (Positive / Negative Examples).
-
-Uses Qdrant’s native recommendation query with positive and
-negative example IDs. S3 Vectors lacks this feature.
-"""
 
 
 @dataclass(frozen=True)
@@ -147,7 +146,9 @@ class S3RecommendEngine(RecommendationBenchmark):
         return [RecommendResult("", "", 0, 0.0, "S3 Vectors", 0.0, is_supported=False)]
 
 
-def report_recommendations(title: str, results_list: List[List[RecommendResult]]):
+def report_recommendations(
+    title: str, results_list: List[List[RecommendResult]]
+) -> None:
     """Print recommendation benchmark results.
 
     Parameters
@@ -173,7 +174,7 @@ def report_recommendations(title: str, results_list: List[List[RecommendResult]]
             print(f"  {i}. {res.title} ({res.genre}, {res.year}) score={res.score:.4f}")
 
 
-def run():
+def run() -> None:
     """Run recommendation benchmark (Qdrant only, two scenarios)."""
     qc = get_qdrant()
 

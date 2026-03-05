@@ -1,3 +1,9 @@
+"""Test 05 : Filter — OR Logic (Drama OR Comedy).
+
+Uses OR filter to match either genre and compares both
+backends for correctness and latency.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -8,13 +14,6 @@ from qdrant_client import models
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
-
-"""
-Test 05 : Filter — OR Logic (Drama OR Comedy).
-
-Uses OR filter to match either genre and compares both
-backends for correctness and latency.
-"""
 
 
 @dataclass(frozen=True)
@@ -162,7 +161,7 @@ class S3VectorEngine(VectorBenchmark):
         ]
 
 
-def report(test_name: str, result_groups: List[List[SearchResult]]):
+def report(test_name: str, result_groups: List[List[SearchResult]]) -> None:
     """Print a formatted benchmark report, one section per engine.
 
     Parameters
@@ -191,7 +190,7 @@ def report(test_name: str, result_groups: List[List[SearchResult]]):
             print(f"  {r.title} — {meta_str}, score={r.score:.4f}")
 
 
-def run():
+def run() -> None:
     """Run OR filter benchmark on both engines."""
     qc, sc = get_clients()
     query_vector = generate_query_embedding("entertaining feel-good movies")

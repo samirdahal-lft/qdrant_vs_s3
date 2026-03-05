@@ -1,3 +1,9 @@
+"""Test 14 : Full-Text Match Filter (Keyword Search in description).
+
+Uses Qdrant's text-index + ``MatchText`` filter to find movies
+whose description contains a keyword. S3 Vectors lacks this.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -8,13 +14,6 @@ from qdrant_client import models
 from core.clients import get_qdrant
 from core.config import QDRANT_COLLECTION
 from core.embeddings import generate_query_embedding
-
-"""
-Test 14 : Full-Text Match Filter (Keyword Search in description).
-
-Uses Qdrant’s text-index + ``MatchText`` filter to find movies
-whose description contains a keyword. S3 Vectors lacks this.
-"""
 
 
 @dataclass(frozen=True)
@@ -155,7 +154,7 @@ class S3TextEngine(TextSearchBenchmark):
 # --- 4. Reporting Layer ---
 
 
-def report_search(results_groups: List[List[FullTextResult]]):
+def report_search(results_groups: List[List[FullTextResult]]) -> None:
     """Print full-text search results per engine.
 
     Parameters
@@ -181,7 +180,7 @@ def report_search(results_groups: List[List[FullTextResult]]):
 
 
 # --- 5. Main Execution ---
-def run():
+def run() -> None:
     """Run full-text match benchmark across multiple keywords."""
     qc = get_qdrant()
 

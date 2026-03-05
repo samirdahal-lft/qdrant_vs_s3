@@ -1,3 +1,9 @@
+"""Test 12 : Hybrid Search (Dense + Sparse / BM25 with RRF Fusion).
+
+Demonstrates Qdrant-only hybrid search using dense and sparse
+vectors fused via Reciprocal Rank Fusion (RRF).
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -9,13 +15,6 @@ from qdrant_client import QdrantClient, models
 from core.config import EMBEDDING_DIM, QDRANT_URL, qdrant_id
 from core.dataset import MOVIES
 from core.embeddings import generate_movie_embeddings, generate_query_embedding
-
-"""
-Test 12 : Hybrid Search (Dense + Sparse / BM25 with RRF Fusion).
-
-Demonstrates Qdrant-only hybrid search using dense and sparse
-vectors fused via Reciprocal Rank Fusion (RRF).
-"""
 
 
 @dataclass(frozen=True)
@@ -190,7 +189,7 @@ class S3HybridEngine(HybridSearchBenchmark):
         return [HybridSearchResult("N/A", 0.0, "S3 Vectors", 0.0, is_supported=False)]
 
 
-def report(query_text: str, result_groups: List[List[HybridSearchResult]]):
+def report(query_text: str, result_groups: List[List[HybridSearchResult]]) -> None:
     """Print hybrid-search benchmark results.
 
     Parameters
@@ -219,7 +218,7 @@ def report(query_text: str, result_groups: List[List[HybridSearchResult]]):
             print(f"  {i}. {res.title} (score={res.score:.4f})")
 
 
-def run():
+def run() -> None:
     """Run hybrid search benchmark (Qdrant only)."""
     qc = QdrantClient(url=QDRANT_URL)
     query = "space robots adventure"

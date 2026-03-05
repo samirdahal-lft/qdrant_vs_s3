@@ -1,3 +1,9 @@
+"""Test 02 : Filter — Exact Match (genre = "Sci-Fi").
+
+Applies an exact-match metadata filter and compares both
+backends for result accuracy and latency.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -8,13 +14,6 @@ from qdrant_client import models
 from core.clients import get_clients
 from core.config import QDRANT_COLLECTION, S3V_BUCKET_NAME, S3V_INDEX_NAME
 from core.embeddings import generate_query_embedding
-
-"""
-Test 02 : Filter — Exact Match (genre = "Sci-Fi").
-
-Applies an exact-match metadata filter and compares both
-backends for result accuracy and latency.
-"""
 
 
 @dataclass(frozen=True)

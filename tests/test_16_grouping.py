@@ -1,3 +1,9 @@
+"""Test 16 : Result Diversity via Server-Side Grouping (1 per Genre).
+
+Uses Qdrant's ``query_points_groups`` to enforce at most one hit
+per genre. S3 Vectors has no native grouping support.
+"""
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -6,13 +12,6 @@ from typing import List
 from core.clients import get_qdrant
 from core.config import QDRANT_COLLECTION
 from core.embeddings import generate_query_embedding
-
-"""
-Test 16 : Result Diversity via Server-Side Grouping (1 per Genre).
-
-Uses Qdrant’s ``query_points_groups`` to enforce at most one hit
-per genre. S3 Vectors has no native grouping support.
-"""
 
 
 @dataclass(frozen=True)
@@ -142,7 +141,7 @@ class S3GroupingEngine(GroupingBenchmark):
         return [GroupedResult("N/A", "N/A", 0.0, "S3 Vectors", 0.0, is_supported=False)]
 
 
-def report_groups(test_name: str, result_groups: List[List[GroupedResult]]):
+def report_groups(test_name: str, result_groups: List[List[GroupedResult]]) -> None:
     """Print grouped-search benchmark results.
 
     Parameters
@@ -172,7 +171,7 @@ def report_groups(test_name: str, result_groups: List[List[GroupedResult]]):
             print(f"  [{res.group_id}] {res.title} (score={res.score:.4f})")
 
 
-def run():
+def run() -> None:
     """Run grouping benchmark (Qdrant only)."""
     qc = get_qdrant()
 
