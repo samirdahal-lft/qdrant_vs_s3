@@ -1,4 +1,4 @@
-# Qdrant vs S3 Vectors Benchmark Suite
+# Qdrant vs S3 Vectors
 
 A comprehensive Python benchmarking suite that compares **Qdrant** (self-hosted vector database) with **Amazon S3 Vectors** (AWS managed) across 17 different search scenarios and features.
 
@@ -31,23 +31,9 @@ Each test is self-contained, uses a clean abstract base class (ABC) pattern, and
 - **Python 3.11+** (tested with 3.11.13)
 - **Qdrant running locally** (default: `http://localhost:6333`)
 - **AWS credentials** configured (for S3 Vectors access)
-- **uv** or **pip** for dependency management
+- **uv**  for dependency management
 
-## 2. Run Qdrant locally
-```bash
-# Pull the latest Qdrant image
-docker pull qdrant/qdrant
-
-# Run Qdrant container
-docker run -d \
-  --name qdrant \
-  -p 6333:6333 \
-  -p 6334:6334 \
-  -v $(pwd)/qdrant_storage:/qdrant/storage \
-  qdrant/qdrant
-  ```
-
-### 3. Installation
+### 2. Installation
 
 ```bash
 # Clone the repository
@@ -61,6 +47,21 @@ source .venv/bin/activate
 # Install dependencies from pyproject.toml
 uv sync
 ```
+
+## 3. Run Qdrant locally
+```bash
+# Pull the latest Qdrant image
+docker pull qdrant/qdrant
+
+# Run Qdrant container
+docker run -d \
+  --name qdrant \
+  -p 6333:6333 \
+  -p 6334:6334 \
+  -v $(pwd)/qdrant_storage:/qdrant/storage \
+  qdrant/qdrant
+  ```
+
 
 ### 4. Configuration
 
@@ -78,7 +79,14 @@ AWS_SECRET_ACCESS_KEY= <your_aws_secret_access_key>
 AWS_SESSION_TOKEN = <your_aws_session_token>
 ```
 
-### 5. Run All Tests
+### 5.Run setup file
+
+```bash 
+# This helps to create collection and load the data inside it .
+python setup.py
+```
+
+### 6. Run All Tests
 
 ```bash
 python run_all.py
@@ -97,7 +105,7 @@ Discovered 17 test(s).
   CSV  → results/benchmark_20260226_120000.csv
 ```
 
-### 5. Run Individual Tests
+### 7. Run Individual Tests
 
 ```bash
 # Run a single test directly
