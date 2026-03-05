@@ -19,5 +19,19 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache")
 
 
 def qdrant_id(string_id: str) -> int:
-    """Convert string ID like 'mov_01' to integer for Qdrant (requires int or UUID)."""
+    """Convert a string ID to an integer for Qdrant.
+
+    Qdrant requires integer or UUID point identifiers. This function
+    extracts the numeric suffix from IDs like ``'mov_01'``.
+
+    Parameters
+    ----------
+    string_id : str
+        String identifier with a numeric suffix (e.g. ``'mov_01'``).
+
+    Returns
+    -------
+    int
+        Extracted integer (e.g. ``1``).
+    """
     return int(string_id.split("_")[-1])
