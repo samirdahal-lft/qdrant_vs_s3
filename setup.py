@@ -1,10 +1,12 @@
+"""One-time setup: create collections / indexes and ingest the movie dataset."""
+
 import time
 
+from botocore.client import BaseClient
 from dotenv import load_dotenv
+from qdrant_client import QdrantClient, models
+
 from core.clients import get_qdrant, get_s3v
-from qdrant_client import models
-
-
 from core.config import (
     AWS_REGION,
     EMBEDDING_DIM,
@@ -20,7 +22,14 @@ from core.embeddings import generate_movie_embeddings
 load_dotenv()
 
 
-def setup_qdrant():
+def setup_qdrant() -> tuple[QdrantClient, dict[str, list[float]]]:
+    """Create the Qdrant collection, payload indexes, and upsert movies.
+
+    Returns
+    -------
+    tuple[QdrantClient, dict[str, list[float]]]
+        ``(client, embeddings)`` where *embeddings* maps movie ID to vector.
+    """
 
     client = get_qdrant()
     if client.collection_exists(collection_name=QDRANT_COLLECTION):
@@ -66,7 +75,14 @@ def setup_qdrant():
     return client, embeddings
 
 
-def setup_s3vectors():
+def setup_s3vectors() -> tuple[BaseClient, dict[str, list[float]]]:
+    """Create the S3 Vectors bucket, index, and upload movie vectors.
+
+    Returns
+    -------
+    tuple[botocore.client.BaseClient, dict[str, list[float]]]
+        ``(client, embeddings)``.
+    """
 
     client = get_s3v()
 
@@ -113,8 +129,14 @@ def setup_s3vectors():
     return client, embeddings
 
 
-def setup_both():
-    """Returns (qdrant_client, s3v_client, embeddings)."""
+def setup_both() -> tuple[QdrantClient, BaseClient, dict[str, list[float]]]:
+    """Provision both platforms and return their clients.
+
+    Returns
+    -------
+    tuple[QdrantClient, botocore.client.BaseClient, dict]
+        ``(qdrant_client, s3v_client, embeddings)``.
+    """
     print("Setting up both platforms...")
     qc, emb = setup_qdrant()
     sc, _ = setup_s3vectors()
@@ -123,14 +145,16 @@ def setup_both():
     return qc, sc, emb
 
 
-def cleanup_qdrant():
+def cleanup_qdrant() -> None:
+    """Delete the Qdrant movies collection."""
     from qdrant_client import QdrantClient
 
     QdrantClient(url=QDRANT_URL).delete_collection(QDRANT_COLLECTION)
     print("Qdrant cleaned up.")
 
 
-def cleanup_s3vectors():
+def cleanup_s3vectors() -> None:
+    """Delete the S3 Vectors index and bucket."""
     import boto3
 
     c = boto3.client("s3vectors", region_name=AWS_REGION)
@@ -138,16 +162,21 @@ def cleanup_s3vectors():
         c.delete_vector_index(
             vectorBucketName=S3V_BUCKET_NAME, indexName=S3V_INDEX_NAME
         )
-    except:
+    except c.exceptions.ResourceNotFoundException:
         pass
+    except Exception as exc:
+        print(f"  Warning: delete_vector_index failed: {exc}")
     try:
         c.delete_vector_bucket(vectorBucketName=S3V_BUCKET_NAME)
-    except:
+    except c.exceptions.ResourceNotFoundException:
         pass
+    except Exception as exc:
+        print(f"  Warning: delete_vector_bucket failed: {exc}")
     print("S3 Vectors cleaned up.")
 
 
-def cleanup_both():
+def cleanup_both() -> None:
+    """Tear down both Qdrant and S3 Vectors resources."""
     cleanup_qdrant()
     cleanup_s3vectors()
 
