@@ -15,20 +15,10 @@ from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Ensure the project root is on sys.path so `core` imports work regardless
-# of how the script is invoked.
-# ---------------------------------------------------------------------------
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-# ---------------------------------------------------------------------------
-# Auto-activate the venv when executed with the system Python.
-# ---------------------------------------------------------------------------
-VENV_PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
-if VENV_PYTHON.exists() and Path(sys.executable).resolve() != VENV_PYTHON.resolve():
-    os.execv(str(VENV_PYTHON), [str(VENV_PYTHON), *sys.argv])
 
 
 def discover_tests() -> list[str]:
