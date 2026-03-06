@@ -1,4 +1,4 @@
-"""Test 18 : TopK Boundary Analysis (The 100-limit Wall).
+"""Test 17 : TopK Boundary Analysis (The 100-limit Wall).
 
 Probes the maximum ``topK`` each backend allows and records
 whether the request succeeds or is rejected.
@@ -166,7 +166,7 @@ def run():
     s_engine = S3LimitEngine(sc)
 
     print("=" * 60)
-    print("TEST 18: TopK Boundary Analysis (The 100-limit Wall)")
+    print("TEST 17: TopK Boundary Analysis (The 100-limit Wall)")
     print("=" * 60)
 
     print("\n--- Scenario A: Requesting 100 results ---")

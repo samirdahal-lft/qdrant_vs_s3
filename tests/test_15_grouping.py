@@ -1,4 +1,4 @@
-"""Test 16 : Result Diversity via Server-Side Grouping (1 per Genre).
+"""Test 15 : Result Diversity via Server-Side Grouping (1 per Genre).
 
 Uses Qdrant's ``query_points_groups`` to enforce at most one hit
 per genre. S3 Vectors has no native grouping support.
@@ -187,7 +187,7 @@ def run() -> None:
     ]
 
     report_groups(
-        "TEST 17: Result Diversity via Grouping (1 per Genre)", benchmark_results
+        "TEST 15: Result Diversity via Grouping (1 per Genre)", benchmark_results
     )
 
 

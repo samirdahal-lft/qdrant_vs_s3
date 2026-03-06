@@ -1,4 +1,4 @@
-"""Test 12 : Hybrid Search (Dense + Sparse / BM25 with RRF Fusion).
+"""Test 11 : Hybrid Search (Dense + Sparse / BM25 with RRF Fusion).
 
 Demonstrates Qdrant-only hybrid search using dense and sparse
 vectors fused via Reciprocal Rank Fusion (RRF).
@@ -200,7 +200,7 @@ def report(query_text: str, result_groups: List[List[HybridSearchResult]]) -> No
         One inner list per engine.
     """
     print("=" * 60)
-    print(f"TEST 12: Hybrid Search — Query: '{query_text}'")
+    print(f"TEST 11: Hybrid Search — Query: '{query_text}'")
     print("=" * 60)
 
     for results in result_groups:

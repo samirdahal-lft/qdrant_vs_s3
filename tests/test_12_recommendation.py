@@ -1,4 +1,4 @@
-"""Test 13 : Recommendation API (Positive / Negative Examples).
+"""Test 12 : Recommendation API (Positive / Negative Examples).
 
 Uses Qdrant's native recommendation query with positive and
 negative example IDs. S3 Vectors lacks this feature.
@@ -184,7 +184,7 @@ def run() -> None:
     ]
 
     print("=" * 60)
-    print("TEST 13: Recommendation API (Positive/Negative Examples)")
+    print("TEST 12: Recommendation API (Positive/Negative Examples)")
     print("=" * 60)
 
     results_1 = [e.get_recommendations(["mov_01"], [], 5) for e in engines]

@@ -1,4 +1,4 @@
-"""Test 14 : Full-Text Match Filter (Keyword Search in description).
+"""Test 13 : Full-Text Match Filter (Keyword Search in description).
 
 Uses Qdrant's text-index + ``MatchText`` filter to find movies
 whose description contains a keyword. S3 Vectors lacks this.
@@ -187,7 +187,7 @@ def run() -> None:
     engines: List[TextSearchBenchmark] = [QdrantTextEngine(qc), S3TextEngine(None)]
 
     print("=" * 60)
-    print("TEST 15: Full-Text Match Filter (Keyword Search)")
+    print("TEST 13: Full-Text Match Filter (Keyword Search)")
     print("=" * 60)
 
     keywords = ["robot", "war", "love"]

@@ -1,4 +1,4 @@
-"""Test 10 : Update Metadata — Qdrant vs S3 Vectors.
+"""Test 09 : Update Metadata — Qdrant vs S3 Vectors.
 
 Compares partial-update (Qdrant ``set_payload``) with full
 re-put (S3 Vectors ``put_vectors``) for a single field change.
@@ -245,7 +245,7 @@ def run() -> None:
     engines = [QdrantEngine(qc), S3VectorEngine(sc, embeddings)]
     results = [engine.update_metadata("mov_05", "rating", 9.5) for engine in engines]
 
-    report("TEST 10: Update Metadata (change rating of Shawshank Redemption)", results)
+    report("TEST 09: Update Metadata (change rating of Shawshank Redemption)", results)
 
 
 if __name__ == "__main__":

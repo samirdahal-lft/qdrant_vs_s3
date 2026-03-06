@@ -1,4 +1,4 @@
-"""Test 09 : Get Vectors by ID.
+"""Test 08 : Get Vectors by ID.
 
 Retrieves a single vector by its identifier from both backends
 and compares latency and payload completeness.
@@ -175,7 +175,7 @@ def run() -> None:
     engines = [QdrantEngine(qc), S3VectorEngine(sc)]
     benchmark_data = [engine.retrieve_by_id(target_id) for engine in engines]
 
-    report("TEST 09: Get Vectors by ID", benchmark_data)
+    report("TEST 08: Get Vectors by ID", benchmark_data)
 
 
 if __name__ == "__main__":

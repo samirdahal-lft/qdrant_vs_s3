@@ -1,4 +1,4 @@
-"""Test 15 : Geo Filtering — Radius Search (50 km of Paris).
+"""Test 14 : Geo Filtering — Radius Search (50 km of Paris).
 
 Uses Qdrant's native geo-radius filter on a synthetic dataset.
 S3 Vectors has no spatial indexing support.
@@ -241,7 +241,7 @@ def run():
     engines = [QdrantGeoEngine(qc), S3GeoEngine(None)]
 
     print("=" * 60)
-    print("TEST 16: Geo Filtering — Radius Search (50km of Paris)")
+    print("TEST 14: Geo Filtering — Radius Search (50km of Paris)")
     print("=" * 60)
 
     for engine in engines:

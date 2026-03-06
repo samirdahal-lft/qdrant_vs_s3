@@ -1,4 +1,4 @@
-"""Test 17 : Named Vectors (Title vs Description Embeddings).
+"""Test 16 : Named Vectors (Title vs Description Embeddings).
 
 Stores separate title and description embeddings per point and
 searches against each named vector independently. Qdrant only.
@@ -217,7 +217,7 @@ def run() -> None:
     engines = [QdrantNamedEngine(qc), S3NamedEngine(None)]
 
     print("=" * 60)
-    print("TEST 18: Named Vectors (Title vs Description Embeddings)")
+    print("TEST 16: Named Vectors (Title vs Description Embeddings)")
     print("=" * 60)
 
     query1 = "The Matrix"

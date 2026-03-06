@@ -1,4 +1,4 @@
-"""Test 11 : Delete Vectors — Qdrant vs S3 Vectors.
+"""Test 10 : Delete Vectors — Qdrant vs S3 Vectors.
 
 Removes a single vector from both backends and verifies the
 count drop and latency difference.
@@ -184,7 +184,7 @@ def run() -> None:
     engines = [QdrantEngine(qc), S3VectorEngine(sc)]
     results = [engine.delete_vector(target_id) for engine in engines]
 
-    report("TEST 11: Delete Vectors", results)
+    report("TEST 10: Delete Vectors", results)
 
 
 if __name__ == "__main__":
